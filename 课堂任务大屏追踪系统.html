@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>课堂学生任务实时追踪大屏系统</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                        },
+                        gold: {
+                            400: '#facc15',
+                            500: '#eab308',
+                            600: '#ca8a04',
+                        }
+                    },
+                    animation: {
+                        'pulse-glow': 'pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'bounce-short': 'bounceShort 0.5s ease-in-out',
+                    },
+                    keyframes: {
+                        pulseGlow: {
+                            '0%, 100%': { boxShadow: '0 0 15px rgba(234, 179, 8, 0.6)' },
+                            '50%': { boxShadow: '0 0 25px rgba(234, 179, 8, 0.9)' },
+                        },
+                        bounceShort: {
+                            '0%, 100%': { transform: 'scale(1)' },
+                            '50%': { transform: 'scale(1.15)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 针对大屏显示的自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(51, 65, 85, 0.8);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(71, 85, 105, 1);
+        }
+
+        /* 矩阵表格固定首列 */
+        .sticky-col {
+            position: sticky;
+            left: 0;
+            z-index: 20;
+        }
+
+        /* 极简网格背景背景 */
+        .bg-grid-pattern {
+            background-size: 30px 30px;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex flex-col antialiased bg-grid-pattern selection:bg-blue-500 selection:text-white">
+
+    <!-- 顶部导航栏 -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 lg:px-8 py-3 transition-all">
+        <div class="flex flex-wrap items-center justify-between gap-4 max-w-[1920px] mx-auto">
+            <!-- 标题区 -->
+            <div class="flex items-center space-x-3">
+                <div class="bg-gradient-to-tr from-blue-600 to-indigo-500 p-2.5 rounded-xl shadow-lg shadow-blue-500/20">
+                    <i data-lucide="layout-dashboard" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl lg:text-2xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+                        课堂任务实时追踪大屏
+                    </h1>
+                    <p class="text-xs text-slate-400 flex items-center gap-2">
+                        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                        实时同步矩阵大屏看板
+                    </p>
+                </div>
+            </div>
+
+            <!-- 数据概览 Pill -->
+            <div class="hidden lg:flex items-center space-x-6 bg-slate-800/60 border border-slate-700/60 rounded-xl px-5 py-2 text-sm">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="users" class="w-4 h-4 text-blue-400"></i>
+                    <span class="text-slate-400">学生总数:</span>
+                    <span id="stat-total-students" class="font-bold text-white text-base">0</span>
+                </div>
+                <div class="h-4 w-px bg-slate-700"></div>
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="list-checks" class="w-4 h-4 text-indigo-400"></i>
+                    <span class="text-slate-400">任务数:</span>
+                    <span id="stat-total-tasks" class="font-bold text-white text-base">0</span>
+                </div>
+                <div class="h-4 w-px bg-slate-700"></div>
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+                    <span class="text-slate-400">平均完成率:</span>
+                    <span id="stat-avg-completion" class="font-bold text-emerald-400 text-base">0%</span>
+                </div>
+                <div class="h-4 w-px bg-slate-700"></div>
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="award" class="w-4 h-4 text-amber-400"></i>
+                    <span class="text-slate-400">优秀率:</span>
+                    <span id="stat-avg-excellent" class="font-bold text-amber-400 text-base">0%</span>
+                </div>
+            </div>
+
+            <!-- 操作按钮组 -->
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <button onclick="openStudentModal()" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95">
+                    <i data-lucide="user-plus" class="w-4 h-4 text-blue-400"></i>
+                    <span class="hidden sm:inline">导入/管理学生</span>
+                </button>
+
+                <button onclick="openTaskModal()" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium transition active:scale-95">
+                    <i data-lucide="plus-circle" class="w-4 h-4 text-indigo-400"></i>
+                    <span class="hidden sm:inline">添加/管理任务</span>
+                </button>
+
+                <div class="h-6 w-px bg-slate-800 mx-1"></div>
+
+                <button onclick="toggleFullscreen()" title="切换大屏全屏模式" class="flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded-lg text-sm font-medium shadow-lg shadow-blue-600/30 transition active:scale-95">
+                    <i data-lucide="maximize" class="w-4 h-4"></i>
+                    <span class="hidden md:inline">大屏全屏模式</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主体区域 -->
+    <main class="flex-1 p-4 lg:p-6 flex flex-col space-y-6 max-w-[1920px] w-full mx-auto">
+
+        <!-- 任务统计卡片列表 (图表/进度条大屏视角) -->
+        <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" id="task-stats-cards">
+            <!-- 动态生成任务卡片 -->
+        </section>
+
+        <!-- 图例与操作提示条 -->
+        <div class="flex flex-wrap items-center justify-between bg-slate-900/60 border border-slate-800/80 rounded-xl px-4 py-3 gap-4 text-xs sm:text-sm">
+            <div class="flex items-center space-x-6">
+                <span class="text-slate-400 font-medium">状态切换指南 (点击单元格):</span>
+                <div class="flex items-center space-x-2">
+                    <span class="w-3.5 h-3.5 rounded-full bg-slate-700 border border-slate-600 inline-block"></span>
+                    <span class="text-slate-300">未完成 (灰色)</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="w-3.5 h-3.5 rounded-full bg-emerald-500/20 border border-emerald-500 inline-block"></span>
+                    <span class="text-emerald-400 font-medium">已完成 (绿色)</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="w-3.5 h-3.5 rounded-full bg-amber-500/30 border border-amber-400 inline-block"></span>
+                    <span class="text-amber-300 font-medium flex items-center gap-1">优秀 (金色勋章 <i data-lucide="award" class="w-3 h-3 text-amber-400 inline"></i>)</span>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-3 text-slate-400">
+                <button onclick="resetAllStatus()" class="hover:text-rose-400 transition flex items-center space-x-1 underline underline-offset-4">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    <span>重置所有状态</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 大屏数据看板核心矩阵表格 -->
+        <div class="flex-1 bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)] flex-1 relative">
+                <table class="w-full text-left border-collapse min-w-[700px]">
+                    <thead>
+                        <tr class="bg-slate-900 border-b border-slate-800 text-slate-400 text-sm font-semibold sticky top-0 z-30 shadow-md">
+                            <!-- 学号/序号与姓名固定列 -->
+                            <th class="p-4 w-16 text-center sticky-col bg-slate-900 border-r border-slate-800">#</th>
+                            <th class="p-4 w-40 sticky-col bg-slate-900 border-r border-slate-800 left-[64px]">学生姓名</th>
+                            <!-- 动态任务头 -->
+                            <th id="task-headers-container" class="contents">
+                                <!-- 填充任务列标题 -->
+                            </th>
+                            <th class="p-4 text-center w-36 bg-slate-900/90">学生完成度</th>
+                        </tr>
+                    </thead>
+                    <tbody id="matrix-tbody" class="divide-y divide-slate-800/60 text-sm">
+                        <!-- 动态渲染学生与任务状态列表 -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 空数据状态 -->
+            <div id="empty-state" class="hidden flex-1 flex flex-col items-center justify-center p-12 text-center">
+                <div class="bg-slate-800/50 p-4 rounded-full border border-slate-700/50 mb-3">
+                    <i data-lucide="users-round" class="w-10 h-10 text-slate-500"></i>
+                </div>
+                <h3 class="text-lg font-medium text-slate-200">暂无学生或任务数据</h3>
+                <p class="text-sm text-slate-400 mt-1 max-w-md">点击顶部“导入/管理学生”按钮添加班级名单，或者“添加/管理任务”设置教学追踪目标。</p>
+                <div class="flex space-x-3 mt-4">
+                    <button onclick="loadSampleData()" class="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-lg text-sm font-medium transition">
+                        加载示例数据体验
+                    </button>
+                    <button onclick="openStudentModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm font-medium transition">
+                        导入学生名单
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal 1: 学生管理与导入 -->
+    <div id="student-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i data-lucide="users" class="text-blue-400"></i> 学生名单管理
+                </h3>
+                <button onclick="closeStudentModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="py-4 space-y-5 overflow-y-auto flex-1">
+                <!-- 批量导入组 -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-2">批量粘贴姓名 (每行一位学生，或用逗号/顿号隔开)</label>
+                    <textarea id="student-batch-input" rows="4" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="张伟&#10;李娜&#10;王强&#10;刘洋"></textarea>
+                    <div class="flex justify-between items-center mt-2">
+                        <span class="text-xs text-slate-500">提示: 重复姓名将被自动过滤或唯一化处理</span>
+                        <button onclick="handleBatchAddStudents()" class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition">
+                            解析并添加列表
+                        </button>
+                    </div>
+                </div>
+
+                <div class="relative flex py-1 items-center">
+                    <div class="flex-grow border-t border-slate-800"></div>
+                    <span class="flex-shrink mx-4 text-xs text-slate-500">或手动逐个添加</span>
+                    <div class="flex-grow border-t border-slate-800"></div>
+                </div>
+
+                <!-- 逐个添加 -->
+                <div class="flex gap-2">
+                    <input type="text" id="single-student-name" placeholder="请输入学生姓名..." class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
+                    <button onclick="handleSingleAddStudent()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-sm font-medium transition">
+                        添加学生
+                    </button>
+                </div>
+
+                <!-- 当前学生列表与一键清空 -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-slate-300">目前名单 (<span id="modal-student-count">0</span>人)</span>
+                        <button onclick="clearAllStudents()" class="text-xs text-rose-400 hover:text-rose-300 transition">清空学生名单</button>
+                    </div>
+                    <div id="student-chips-container" class="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-3 bg-slate-950 border border-slate-800/80 rounded-xl">
+                        <!-- 学生 Label 标签列表 -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-slate-800 flex justify-end">
+                <button onclick="closeStudentModal()" class="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-medium transition">
+                    完成并关闭
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 2: 任务管理与编辑 -->
+    <div id="task-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i data-lucide="list-checks" class="text-indigo-400"></i> 任务项管理
+                </h3>
+                <button onclick="closeTaskModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="py-4 space-y-5 overflow-y-auto flex-1">
+                <!-- 添加新任务 -->
+                <div class="space-y-3">
+                    <label class="block text-sm font-medium text-slate-300">添加新任务项</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="new-task-name" placeholder="例：作业1 / 课堂实操 / 随堂测试" class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500">
+                        <button onclick="handleAddTask()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition">
+                            新增任务
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 现有任务管理列表 -->
+                <div>
+                    <span class="block text-sm font-medium text-slate-300 mb-2">已有任务矩阵列</span>
+                    <div id="task-list-container" class="space-y-2">
+                        <!-- 动态任务配置列表 -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-slate-800 flex justify-end">
+                <button onclick="closeTaskModal()" class="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-medium transition">
+                    完成并关闭
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 弹窗：修改任务名称 Modal -->
+    <div id="edit-task-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+            <h4 class="text-md font-bold text-white mb-3">修改任务名称</h4>
+            <input type="text" id="edit-task-input" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 mb-4">
+            <div class="flex justify-end space-x-2">
+                <button onclick="closeEditTaskModal()" class="px-3.5 py-1.5 bg-slate-800 text-slate-300 rounded-lg text-xs font-medium">取消</button>
+                <button onclick="saveEditTask()" class="px-3.5 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium">保存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript 应用逻辑 -->
+    <script>
+        // --- 核心应用数据结构与状态 ---
+        const STORAGE_KEY = 'CLASS_TASK_TRACKER_DATA';
+        
+        // 状态说明: 0: 未完成 (default), 1: 已完成, 2: 优秀
+        let appState = {
+            students: [], // [{ id: 's1', name: '张三' }, ...]
+            tasks: [],    // [{ id: 't1', title: '任务一' }, ...]
+            matrix: {}    // { 's1_t1': 0/1/2, 's1_t2': 1, ... }
+        };
+
+        let currentEditingTaskId = null;
+
+        // --- 初始化入口 ---
+        window.onload = function() {
+            loadFromStorage();
+            if (appState.students.length === 0 && appState.tasks.length === 0) {
+                // 如果第一次使用，可以默认加载提示或者保持干净
+                loadSampleData(); 
+            } else {
+                renderAll();
+            }
+            lucide.createIcons();
+        };
+
+        // --- 本地存储持久化 ---
+        function saveToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+            } catch (e) {
+                console.error("保存 localStorage 失败", e);
+            }
+        }
+
+        function loadFromStorage() {
+            try {
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored) {
+                    appState = JSON.parse(stored);
+                }
+            } catch (e) {
+                console.error("读取 localStorage 失败", e);
+            }
+        }
+
+        // --- 渲染逻辑 ---
+        function renderAll() {
+            renderHeaders();
+            renderMatrix();
+            renderStatsCards();
+            renderStudentModalChips();
+            renderTaskModalList();
+            updateHeaderStats();
+            lucide.createIcons();
+        }
+
+        // 渲染大屏顶部基础数据
+        function updateHeaderStats() {
+            const totalStudents = appState.students.length;
+            const totalTasks = appState.tasks.length;
+            
+            document.getElementById('stat-total-students').innerText = totalStudents;
+            document.getElementById('stat-total-tasks').innerText = totalTasks;
+
+            const totalPossible = totalStudents * totalTasks;
+            if (totalPossible === 0) {
+                document.getElementById('stat-avg-completion').innerText = '0%';
+                document.getElementById('stat-avg-excellent').innerText = '0%';
+                return;
+            }
+
+            let completedCount = 0;
+            let excellentCount = 0;
+
+            Object.values(appState.matrix).forEach(val => {
+                if (val === 1 || val === 2) completedCount++;
+                if (val === 2) excellentCount++;
+            });
+
+            const completionRate = Math.round((completedCount / totalPossible) * 100);
+            const excellentRate = Math.round((excellentCount / totalPossible) * 100);
+
+            document.getElementById('stat-avg-completion').innerText = `${completionRate}%`;
+            document.getElementById('stat-avg-excellent').innerText = `${excellentRate}%`;
+        }
+
+        // 渲染矩阵表格头部 (任务列标题)
+        function renderHeaders() {
+            const container = document.getElementById('task-headers-container');
+            container.innerHTML = '';
+
+            appState.tasks.forEach((task, index) => {
+                const th = document.createElement('th');
+                th.className = "p-4 text-center border-r border-slate-800 min-w-[140px] bg-slate-900/90";
+                th.innerHTML = `
+                    <div class="flex flex-col items-center justify-center space-y-1">
+                        <span class="text-xs text-blue-400 font-mono">TASK 0${index + 1}</span>
+                        <span class="text-slate-100 font-semibold truncate max-w-[120px]" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</span>
+                    </div>
+                `;
+                container.appendChild(th);
+            });
+        }
+
+        // 渲染矩阵表格体 (学生行 x 任务列)
+        function renderMatrix() {
+            const tbody = document.getElementById('matrix-tbody');
+            const emptyState = document.getElementById('empty-state');
+            tbody.innerHTML = '';
+
+            if (appState.students.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            } else {
+                emptyState.classList.add('hidden');
+            }
+
+            appState.students.forEach((student, sIdx) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/40 transition-colors group";
+
+                // 计算当前学生的个人完成进度
+                let studentCompleted = 0;
+                appState.tasks.forEach(t => {
+                    const status = appState.matrix[`${student.id}_${t.id}`] || 0;
+                    if (status > 0) studentCompleted++;
+                });
+                const studentRate = appState.tasks.length > 0 ? Math.round((studentCompleted / appState.tasks.length) * 100) : 0;
+
+                // 1. 序号
+                let html = `
+                    <td class="p-4 text-center text-slate-500 font-mono text-xs sticky-col bg-slate-900 border-r border-slate-800 group-hover:bg-slate-850">
+                        ${sIdx + 1}
+                    </td>
+                    <td class="p-4 font-medium text-slate-200 sticky-col bg-slate-900 border-r border-slate-800 left-[64px] group-hover:bg-slate-850 flex items-center justify-between">
+                        <span class="truncate max-w-[110px]" title="${escapeHtml(student.name)}">${escapeHtml(student.name)}</span>
+                        <button onclick="removeStudent('${student.id}')" title="删除该学生" class="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 transition p-1">
+                            <i data-lucide="user-x" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </td>
+                `;
+
+                // 2. 各任务单元格状态按钮
+                appState.tasks.forEach(task => {
+                    const cellKey = `${student.id}_${task.id}`;
+                    const status = appState.matrix[cellKey] || 0;
+
+                    let cellStyle = "bg-slate-800/40 text-slate-500 hover:bg-slate-800 hover:text-slate-300 border-slate-800";
+                    let statusContent = `<span class="text-xs">未完成</span>`;
+
+                    if (status === 1) {
+                        // 已完成
+                        cellStyle = "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25 shadow-sm shadow-emerald-500/10";
+                        statusContent = `<div class="flex items-center gap-1 font-semibold text-xs"><i data-lucide="check" class="w-4 h-4"></i>已完成</div>`;
+                    } else if (status === 2) {
+                        // 优秀
+                        cellStyle = "bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-amber-300 border-amber-500/50 hover:from-amber-500/30 hover:to-yellow-500/30 shadow-md shadow-amber-500/20 animate-pulse-glow";
+                        statusContent = `<div class="flex items-center gap-1 font-bold text-xs"><i data-lucide="award" class="w-4 h-4 text-amber-400 animate-bounce-short"></i>优秀</div>`;
+                    }
+
+                    html += `
+                        <td class="p-2 text-center border-r border-slate-800/60">
+                            <button onclick="toggleCellStatus('${student.id}', '${task.id}', event)" class="w-full py-2.5 px-2 rounded-xl border transition-all duration-200 flex items-center justify-center cursor-pointer ${cellStyle}">
+                                ${statusContent}
+                            </button>
+                        </td>
+                    `;
+                });
+
+                // 3. 学生个人完成度进度条
+                html += `
+                    <td class="p-4 text-center">
+                        <div class="flex items-center space-x-2">
+                            <div class="flex-1 bg-slate-800 h-2 rounded-full overflow-hidden">
+                                <div class="bg-gradient-to-r from-blue-500 to-emerald-400 h-full rounded-full transition-all duration-300" style="width: ${studentRate}%"></div>
+                            </div>
+                            <span class="text-xs font-mono font-medium text-slate-400 w-8 text-right">${studentRate}%</span>
+                        </div>
+                    </td>
+                `;
+
+                tr.innerHTML = html;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 渲染顶部的任务统计视图 (图表/进度条)
+        function renderStatsCards() {
+            const container = document.getElementById('task-stats-cards');
+            container.innerHTML = '';
+
+            const totalStudents = appState.students.length;
+
+            appState.tasks.forEach((task, idx) => {
+                let completed = 0;
+                let excellent = 0;
+
+                appState.students.forEach(s => {
+                    const st = appState.matrix[`${s.id}_${task.id}`] || 0;
+                    if (st === 1 || st === 2) completed++;
+                    if (st === 2) excellent++;
+                });
+
+                const compPercent = totalStudents > 0 ? Math.round((completed / totalStudents) * 100) : 0;
+                const excPercent = totalStudents > 0 ? Math.round((excellent / totalStudents) * 100) : 0;
+
+                const card = document.createElement('div');
+                card.className = "bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 shadow-lg flex flex-col justify-between hover:border-slate-700 transition";
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center space-x-2">
+                            <span class="w-6 h-6 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-mono font-bold flex items-center justify-center border border-blue-500/20">0${idx+1}</span>
+                            <h4 class="font-bold text-slate-100 truncate max-w-[150px]" title="${escapeHtml(task.title)}">${escapeHtml(task.title)}</h4>
+                        </div>
+                        <span class="text-xs text-slate-400 font-mono">${completed}/${totalStudents} 人已完成</span>
+                    </div>
+
+                    <div class="space-y-2">
+                        <!-- 完成率进度条 -->
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">完成率</span>
+                                <span class="text-emerald-400 font-semibold">${compPercent}%</span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                                <div class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: ${compPercent}%"></div>
+                            </div>
+                        </div>
+
+                        <!-- 优秀率进度条 -->
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">优秀率</span>
+                                <span class="text-amber-400 font-semibold">${excPercent}%</span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-gradient-to-r from-amber-500 to-yellow-400 h-full rounded-full transition-all duration-500" style="width: ${excPercent}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // --- 核心操作：状态切换与粒子特效 ---
+        function toggleCellStatus(studentId, taskId, event) {
+            const key = `${studentId}_${taskId}`;
+            const current = appState.matrix[key] || 0;
+            // 切换顺序：未完成(0) -> 已完成(1) -> 优秀(2) -> 未完成(0)
+            const nextStatus = (current + 1) % 3;
+            appState.matrix[key] = nextStatus;
+
+            // 如果切换为“优秀”，在点击位置触发粒子彩带/金币特效
+            if (nextStatus === 2 && event) {
+                triggerConfetti(event);
+            }
+
+            saveToStorage();
+            renderAll();
+        }
+
+        // 炫彩粒子礼花特效
+        function triggerConfetti(event) {
+            if (typeof confetti === 'function') {
+                const rect = event.currentTarget.getBoundingClientRect();
+                const x = (rect.left + rect.width / 2) / window.innerWidth;
+                const y = (rect.top + rect.height / 2) / window.innerHeight;
+
+                confetti({
+                    particleCount: 40,
+                    spread: 60,
+                    origin: { x: x, y: y },
+                    colors: ['#facc15', '#eab308', '#38bdf8', '#4ade80'],
+                    disableForReducedMotion: true
+                });
+            }
+        }
+
+        function resetAllStatus() {
+            if (confirm("确定要重置所有学生的任务完成状态吗？此操作无法撤销。")) {
+                appState.matrix = {};
+                saveToStorage();
+                renderAll();
+            }
+        }
+
+        // --- 学生管理 logic ---
+        function openStudentModal() {
+            renderStudentModalChips();
+            document.getElementById('student-modal').classList.remove('hidden');
+        }
+
+        function closeStudentModal() {
+            document.getElementById('student-modal').classList.add('hidden');
+        }
+
+        function renderStudentModalChips() {
+            const container = document.getElementById('student-chips-container');
+            const countLabel = document.getElementById('modal-student-count');
+            container.innerHTML = '';
+            countLabel.innerText = appState.students.length;
+
+            if (appState.students.length === 0) {
+                container.innerHTML = `<span class="text-xs text-slate-500 italic p-1">列表为空</span>`;
+                return;
+            }
+
+            appState.students.forEach(s => {
+                const chip = document.createElement('div');
+                chip.className = "flex items-center space-x-1 bg-slate-800 border border-slate-700 text-slate-200 px-2.5 py-1 rounded-lg text-xs font-medium";
+                chip.innerHTML = `
+                    <span>${escapeHtml(s.name)}</span>
+                    <button onclick="removeStudent('${s.id}')" class="text-slate-400 hover:text-rose-400 ml-1 transition">
+                        <i data-lucide="x" class="w-3 h-3"></i>
+                    </button>
+                `;
+                container.appendChild(chip);
+            });
+            lucide.createIcons();
+        }
+
+        function handleBatchAddStudents() {
+            const input = document.getElementById('student-batch-input').value;
+            if (!input.trim()) return;
+
+            // 支持换行、逗号、顿号分隔
+            const names = input.split(/[\n,，、\t]/).map(n => n.trim()).filter(n => n.length > 0);
+            
+            names.forEach(name => {
+                // 生成唯一ID
+                const id = 's_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+                appState.students.push({ id, name });
+            });
+
+            document.getElementById('student-batch-input').value = '';
+            saveToStorage();
+            renderAll();
+        }
+
+        function handleSingleAddStudent() {
+            const input = document.getElementById('single-student-name');
+            const name = input.value.trim();
+            if (!name) return;
+
+            const id = 's_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+            appState.students.push({ id, name });
+            input.value = '';
+            saveToStorage();
+            renderAll();
+        }
+
+        function removeStudent(studentId) {
+            appState.students = appState.students.filter(s => s.id !== studentId);
+            // 清理矩阵中相关关联
+            Object.keys(appState.matrix).forEach(key => {
+                if (key.startsWith(`${studentId}_`)) {
+                    delete appState.matrix[key];
+                }
+            });
+            saveToStorage();
+            renderAll();
+        }
+
+        function clearAllStudents() {
+            if (confirm("确认清空所有学生名单吗？")) {
+                appState.students = [];
+                appState.matrix = {};
+                saveToStorage();
+                renderAll();
+            }
+        }
+
+        // --- 任务管理 logic ---
+        function openTaskModal() {
+            renderTaskModalList();
+            document.getElementById('task-modal').classList.remove('hidden');
+        }
+
+        function closeTaskModal() {
+            document.getElementById('task-modal').classList.add('hidden');
+        }
+
+        function renderTaskModalList() {
+            const container = document.getElementById('task-list-container');
+            container.innerHTML = '';
+
+            if (appState.tasks.length === 0) {
+                container.innerHTML = `<span class="text-xs text-slate-500 italic">暂无任务</span>`;
+                return;
+            }
+
+            appState.tasks.forEach((t, index) => {
+                const item = document.createElement('div');
+                item.className = "flex items-center justify-between bg-slate-950 border border-slate-800 p-3 rounded-xl";
+                item.innerHTML = `
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs font-mono text-indigo-400 font-bold">0${index + 1}</span>
+                        <span class="text-sm font-medium text-slate-200">${escapeHtml(t.title)}</span>
+                    </div>
+                    <div class="flex items-center space-x-1">
+                        <button onclick="openEditTaskModal('${t.id}', '${escapeHtml(t.title)}')" class="p-1.5 text-slate-400 hover:text-indigo-400 transition">
+                            <i data-lucide="edit-3" class="w-4 h-4"></i>
+                        </button>
+                        <button onclick="removeTask('${t.id}')" class="p-1.5 text-slate-400 hover:text-rose-400 transition">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+            lucide.createIcons();
+        }
+
+        function handleAddTask() {
+            const input = document.getElementById('new-task-name');
+            const title = input.value.trim();
+            if (!title) return;
+
+            const id = 't_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+            appState.tasks.push({ id, title });
+            input.value = '';
+            saveToStorage();
+            renderAll();
+        }
+
+        function removeTask(taskId) {
+            appState.tasks = appState.tasks.filter(t => t.id !== taskId);
+            // 清理矩阵
+            Object.keys(appState.matrix).forEach(key => {
+                if (key.endsWith(`_${taskId}`)) {
+                    delete appState.matrix[key];
+                }
+            });
+            saveToStorage();
+            renderAll();
+        }
+
+        function openEditTaskModal(id, currentTitle) {
+            currentEditingTaskId = id;
+            document.getElementById('edit-task-input').value = currentTitle;
+            document.getElementById('edit-task-modal').classList.remove('hidden');
+        }
+
+        function closeEditTaskModal() {
+            document.getElementById('edit-task-modal').classList.add('hidden');
+            currentEditingTaskId = null;
+        }
+
+        function saveEditTask() {
+            const val = document.getElementById('edit-task-input').value.trim();
+            if (!val || !currentEditingTaskId) return;
+
+            const t = appState.tasks.find(item => item.id === currentEditingTaskId);
+            if (t) {
+                t.title = val;
+                saveToStorage();
+                renderAll();
+            }
+            closeEditTaskModal();
+        }
+
+        // --- 全屏模式 ---
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    alert(`无法进入全屏模式: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        // --- 预置演示样例数据 ---
+        function loadSampleData() {
+            const sampleStudents = ["陈哲民", "林小雨", "张云翔", "周子轩", "许佳琪", "赵一鸣", "黄晓明", "孙婷婷"];
+            const sampleTasks = ["课堂代码演练", "小组讨论设计", "课后练习题册", "大作业预演"];
+
+            appState.students = sampleStudents.map((name, i) => ({ id: `s_${i+1}`, name }));
+            appState.tasks = sampleTasks.map((title, i) => ({ id: `t_${i+1}`, title }));
+            
+            // 随机填充一些演示完成状态
+            appState.matrix = {
+                's_1_t_1': 2, 's_1_t_2': 1, 's_1_t_3': 1,
+                's_2_t_1': 1, 's_2_t_2': 2,
+                's_3_t_1': 1, 's_3_t_3': 1,
+                's_4_t_1': 2, 's_4_t_2': 2, 's_4_t_3': 2,
+                's_5_t_1': 1
+            };
+
+            saveToStorage();
+            renderAll();
+        }
+
+        // 辅助转义函数
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
